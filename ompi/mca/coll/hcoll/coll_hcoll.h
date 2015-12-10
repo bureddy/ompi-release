@@ -65,6 +65,8 @@ struct mca_coll_hcoll_component_t {
         for the corresponding hcoll context to be created */
     int hcoll_np;
 
+    int delayed_context_create;
+
     /** Whether or not hcoll_init was ever called */
     bool libhcoll_initialized;
 
@@ -98,6 +100,7 @@ struct mca_coll_hcoll_module_t {
 
     ompi_communicator_t            *comm;
     int                 rank;
+    int hcoll_context_created;
     void *hcoll_context;
     /* Saved handlers - for fallback */
     mca_coll_base_module_reduce_fn_t previous_reduce;
@@ -260,6 +263,7 @@ int mca_coll_hcoll_igatherv(void* sbuf, int scount,
                             mca_coll_base_module_t *module);
 
 int mca_coll_hcoll_progress(void);
+void mca_coll_hcoll_create_context(mca_coll_hcoll_module_t *module);
 void mca_coll_hcoll_mem_release_cb(void *buf, size_t length, void *cbdata, bool from_alloc);
 END_C_DECLS
 
