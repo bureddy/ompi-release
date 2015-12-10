@@ -75,32 +75,32 @@ static void mca_coll_hcoll_module_destruct(mca_coll_hcoll_module_t *hcoll_module
        Then just clear and return. Otherwise release module pointers and
        destroy hcoll context*/
 
+    OBJ_RELEASE(hcoll_module->previous_barrier_module);
+    OBJ_RELEASE(hcoll_module->previous_bcast_module);
+    OBJ_RELEASE(hcoll_module->previous_allreduce_module);
+    OBJ_RELEASE(hcoll_module->previous_allgather_module);
+    OBJ_RELEASE(hcoll_module->previous_gatherv_module);
+    OBJ_RELEASE(hcoll_module->previous_alltoall_module);
+    OBJ_RELEASE(hcoll_module->previous_alltoallv_module);
+
+    OBJ_RELEASE(hcoll_module->previous_ibarrier_module);
+    OBJ_RELEASE(hcoll_module->previous_ibcast_module);
+    OBJ_RELEASE(hcoll_module->previous_iallreduce_module);
+    OBJ_RELEASE(hcoll_module->previous_iallgather_module);
+    OBJ_RELEASE(hcoll_module->previous_igatherv_module);
+    OBJ_RELEASE(hcoll_module->previous_ialltoall_module);
+    OBJ_RELEASE(hcoll_module->previous_ialltoallv_module);
+
+    /*
+       OBJ_RELEASE(hcoll_module->previous_allgatherv_module);
+       OBJ_RELEASE(hcoll_module->previous_gather_module);
+       OBJ_RELEASE(hcoll_module->previous_gatherv_module);
+       OBJ_RELEASE(hcoll_module->previous_alltoallw_module);
+       OBJ_RELEASE(hcoll_module->previous_reduce_scatter_module);
+       OBJ_RELEASE(hcoll_module->previous_reduce_module);
+       */
+
     if (hcoll_module->hcoll_context != NULL){
-        OBJ_RELEASE(hcoll_module->previous_barrier_module);
-        OBJ_RELEASE(hcoll_module->previous_bcast_module);
-        OBJ_RELEASE(hcoll_module->previous_allreduce_module);
-        OBJ_RELEASE(hcoll_module->previous_allgather_module);
-        OBJ_RELEASE(hcoll_module->previous_gatherv_module);
-        OBJ_RELEASE(hcoll_module->previous_alltoall_module);
-        OBJ_RELEASE(hcoll_module->previous_alltoallv_module);
-
-        OBJ_RELEASE(hcoll_module->previous_ibarrier_module);
-        OBJ_RELEASE(hcoll_module->previous_ibcast_module);
-        OBJ_RELEASE(hcoll_module->previous_iallreduce_module);
-        OBJ_RELEASE(hcoll_module->previous_iallgather_module);
-        OBJ_RELEASE(hcoll_module->previous_igatherv_module);
-        OBJ_RELEASE(hcoll_module->previous_ialltoall_module);
-        OBJ_RELEASE(hcoll_module->previous_ialltoallv_module);
-
-        /*
-        OBJ_RELEASE(hcoll_module->previous_allgatherv_module);
-        OBJ_RELEASE(hcoll_module->previous_gather_module);
-        OBJ_RELEASE(hcoll_module->previous_gatherv_module);
-        OBJ_RELEASE(hcoll_module->previous_alltoallw_module);
-        OBJ_RELEASE(hcoll_module->previous_reduce_scatter_module);
-        OBJ_RELEASE(hcoll_module->previous_reduce_module);
-        */
-
         context_destroyed = 0;
         hcoll_destroy_context(hcoll_module->hcoll_context,
                               (rte_grp_handle_t)hcoll_module->comm,
@@ -180,12 +180,6 @@ static int mca_coll_hcoll_module_enable(mca_coll_base_module_t *module,
         return OMPI_ERROR;
     }
 
-    ret = ompi_attr_set_c(COMM_ATTR, comm, &comm->c_keyhash, hcoll_comm_attr_keyval, (void *)module, false);
-    if (OMPI_SUCCESS != ret) {
-        HCOL_VERBOSE(1,"hcoll ompi_attr_set_c failed");
-        return OMPI_ERROR;
-    }
-
     return OMPI_SUCCESS;
 }
 
@@ -199,6 +193,29 @@ int mca_coll_hcoll_progress(void)
     return OMPI_SUCCESS;
 }
 
+void mca_coll_hcoll_create_context(mca_coll_hcoll_module_t *module)
+{
+    int ret;
+    mca_coll_hcoll_module_t *hcoll_module = (mca_coll_hcoll_module_t*)module;
+    struct ompi_communicator_t *comm = hcoll_module->comm;
+    hcoll_module->hcoll_context =
+        hcoll_create_context((rte_grp_handle_t)comm);
+
+    if (NULL == hcoll_module->hcoll_context){
+        HCOL_ERROR("hcoll_create_context failed for comm:%p", (void*)comm);
+        hcoll_module->hcoll_context_created = -1;
+        return;
+    }
+    HCOL_VERBOSE(10,"Creating hcoll_context for comm %p, comm_id %d, comm_size %d",
+                 (void*)comm,comm->c_contextid,ompi_comm_size(comm));
+
+    ret = ompi_attr_set_c(COMM_ATTR, comm, &comm->c_keyhash, hcoll_comm_attr_keyval, (void *)module, false);
+    if (OMPI_SUCCESS != ret) {
+        HCOL_ERROR("hcoll ompi_attr_set_c failed");
+    }
+
+    hcoll_module->hcoll_context_created = 1;
+}
 
 /*
  * Invoked when there's a new communicator that has been created.
@@ -290,22 +307,20 @@ mca_coll_hcoll_comm_query(struct ompi_communicator_t *comm, int *priority)
     }
 
     hcoll_module->comm = comm;
+    hcoll_module->hcoll_context_created = 0;
 
-    HCOL_VERBOSE(10,"Creating hcoll_context for comm %p, comm_id %d, comm_size %d",
-                 (void*)comm,comm->c_contextid,ompi_comm_size(comm));
-
-    hcoll_module->hcoll_context =
-        hcoll_create_context((rte_grp_handle_t)comm);
-
-    if (NULL == hcoll_module->hcoll_context){
-        HCOL_VERBOSE(1,"hcoll_create_context returned NULL");
-        OBJ_RELEASE(hcoll_module);
-        if (!cm->libhcoll_initialized) {
-            cm->hcoll_enable = 0;
-            hcoll_finalize();
-            opal_progress_unregister(mca_coll_hcoll_progress);
+    if (!cm->delayed_context_create) {
+        mca_coll_hcoll_create_context(hcoll_module);
+        if (hcoll_module->hcoll_context_created == -1) {
+            HCOL_VERBOSE(1,"hcoll_create_context returned NULL");
+            OBJ_RELEASE(hcoll_module);
+            if (!cm->libhcoll_initialized) {
+                cm->hcoll_enable = 0;
+                hcoll_finalize();
+                opal_progress_unregister(mca_coll_hcoll_progress);
+            }
+            return NULL;
         }
-        return NULL;
     }
 
     hcoll_module->super.coll_module_enable = mca_coll_hcoll_module_enable;

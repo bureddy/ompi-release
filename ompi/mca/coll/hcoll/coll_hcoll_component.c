@@ -200,6 +200,12 @@ static int hcoll_register(void)
                   &mca_coll_hcoll_component.hcoll_np,
                   0));
 
+    CHECK(reg_int("delayed_context_create",NULL,
+                  "Create context on first collective on a communicator",
+                  1,
+                  &mca_coll_hcoll_component.delayed_context_create,
+                  0));
+
     CHECK(reg_int("datatype_fallback",NULL,
                   "[1|0|] Enable/Disable user defined dattypes fallback",
                   1, 
